@@ -228,7 +228,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
 
   opts.set_xla_gpu_enable_libnvptxcompiler(false);
 
-  opts.set_xla_gpu_enable_dot_strength_reduction(true);
+  opts.set_xla_gpu_enable_dot_strength_reduction(false);
 
   opts.set_xla_gpu_enable_bf16_6way_gemm(false);
   opts.set_xla_gpu_enable_bf16_3way_gemm(false);

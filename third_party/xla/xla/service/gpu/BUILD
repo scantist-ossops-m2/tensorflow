@@ -3564,6 +3564,7 @@ cc_library(
         ":gpu_p2p_pipeliner",
         ":collective_permute_cycle_decomposer",
         ":address_computation_fusion_rewriter",
+        ":gemv_rewriter",
         ":algorithm_checker",
         ":alias_passthrough_params",
         ":all_reduce_blueconnect",
