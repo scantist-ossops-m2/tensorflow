@@ -41,19 +41,20 @@ StatusOr<HloInstruction*> MakeUnaryHlo(HloOpcode opcode,
 
 // Creates a binary HLO instruction and adds it to the computation containing
 // `lhs` and `rhs` (`lhs` and `rhs` must be in the same computation).
-StatusOr<HloInstruction*> MakeBinaryHlo(HloOpcode opcode, HloInstruction* lhs,
-                                        HloInstruction* rhs,
-                                        const OpMetadata* metadata = nullptr);
+StatusOr<HloInstruction*> MakeBinaryHlo(
+    HloOpcode opcode, HloInstruction* lhs, HloInstruction* rhs,
+    const OpMetadata* metadata = nullptr,
+    const FrontendAttributes* frontend_attributes = nullptr);
 
 // Creates a kCopy HLO.
 HloInstruction* MakeCopyHlo(HloInstruction* from, const Shape& to);
 
 // Creates a compare HLO instruction and adds it to the computation containing
 // `lhs` and `rhs` (`lhs` and `rhs` must be in the same computation).
-StatusOr<HloInstruction*> MakeCompareHlo(Comparison::Direction direction,
-                                         HloInstruction* lhs,
-                                         HloInstruction* rhs,
-                                         const OpMetadata* metadata = nullptr);
+StatusOr<HloInstruction*> MakeCompareHlo(
+    Comparison::Direction direction, HloInstruction* lhs, HloInstruction* rhs,
+    const OpMetadata* metadata = nullptr,
+    const FrontendAttributes* frontend_attributes = nullptr);
 
 // Creates a pad HLO instruction and adds it to the computation containing
 // `operand` and `padding_value` (`operand` and `padding_value` must be in the
@@ -81,7 +82,8 @@ StatusOr<HloInstruction*> MakeConvolveHlo(
     const ConvolutionDimensionNumbers& dimension_numbers,
     const PrecisionConfig& precision_config,
     std::optional<PrimitiveType> preferred_element_type,
-    const OpMetadata* metadata = nullptr);
+    const OpMetadata* metadata = nullptr,
+    const FrontendAttributes* frontend_attributes = nullptr);
 
 // Creates a transpose HLO instruction and adds it to the computation containing
 // `operand`.
@@ -144,7 +146,8 @@ StatusOr<HloInstruction*> MakeGetTupleElementHlo(
 // contained in the same computation).
 StatusOr<HloInstruction*> MakeConcatHlo(
     absl::Span<HloInstruction* const> operands, int64_t dimension,
-    const OpMetadata* metadata = nullptr);
+    const OpMetadata* metadata = nullptr,
+    const FrontendAttributes* frontend_attributes = nullptr);
 
 // Creates a Convert HLO instruction that converts the given instruction to have
 // the given primitive type.
