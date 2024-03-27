@@ -1,4 +1,8 @@
+# buildifier: disable=load-on-top
+
 workspace(name = "org_tensorflow")
+
+# buildifier: disable=load-on-top
 
 # We must initialize hermetic python first.
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
@@ -19,11 +23,12 @@ http_archive(
     url = "https://github.com/bazelbuild/rules_python/releases/download/0.26.0/rules_python-0.26.0.tar.gz",
 )
 
+# buildifier: disable=same-origin-load
 load("@rules_python//python:repositories.bzl", "py_repositories")
 
 py_repositories()
 
-load("@rules_python//python:repositories.bzl", "python_register_toolchains")
+load("@rules_python//python:repositories.bzl", "python_register_toolchains")  # buildifier: disable=same-origin-load
 load(
     "//tensorflow/tools/toolchains/python:python_repo.bzl",
     "python_repository",
