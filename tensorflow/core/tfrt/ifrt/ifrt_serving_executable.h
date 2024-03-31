@@ -31,20 +31,23 @@ limitations under the License.
 #include "mlir/IR/BuiltinOps.h"  // from @llvm-project
 #include "mlir/IR/MLIRContext.h"  // from @llvm-project
 #include "mlir/IR/OwningOpRef.h"  // from @llvm-project
-#include "tensorflow/compiler/mlir/tfrt/transforms/ifrt/tf2hlo.h"
+#include "tensorflow/compiler/mlir/tfrt/transforms/ifrt/ifrt_types.h"
 #include "tensorflow/compiler/tf2xla/xla_helpers.h"
 #include "xla/python/ifrt/array.h"
 #include "xla/python/ifrt/client.h"
+#include "xla/python/ifrt/device.h"
 #include "xla/python/ifrt/executable.h"
 #include "xla/python/ifrt/future.h"
 #include "xla/python/ifrt/shape.h"
 #include "xla/python/ifrt/sharding.h"
 #include "xla/xla_data.pb.h"
+#include "tensorflow/core/common_runtime/device_mgr.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/protobuf/tpu/compile_metadata.pb.h"
 #include "tensorflow/core/tfrt/ifrt/ifrt_loaded_variable_registry.h"
 #include "tsl/concurrency/ref_count.h"
+#include "tsl/platform/threadpool.h"
 
 namespace tensorflow {
 namespace ifrt_serving {
@@ -108,6 +111,7 @@ class IfrtServingExecutable {
   struct CachedExecutableBundle {
     std::shared_ptr<xla::ifrt::LoadedExecutable> ifrt_executable;
     tensorflow::tpu::TPUCompileMetadataProto compile_metadata;
+    std::shared_ptr<tensorflow::StaticDeviceMgr> device_mgr;
   };
 
   std::string model_name_;

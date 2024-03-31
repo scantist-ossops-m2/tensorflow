@@ -21,6 +21,7 @@ limitations under the License.
 #include "absl/status/statusor.h"
 #include "xla/python/ifrt/dtype.h"
 #include "xla/python/ifrt/shape.h"
+#include "xla/shape.h"
 #include "xla/xla_data.pb.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/tensor_shape.pb.h"
@@ -34,6 +35,9 @@ absl::StatusOr<tensorflow::DataType> ToTensorDataType(
     xla::ifrt::DType ifrt_dtype);
 
 absl::StatusOr<xla::ifrt::DType> ToIfrtDType(tensorflow::DataType tensor_dtype);
+
+absl::StatusOr<xla::Shape> TensorShapeToXlaShape(
+    tensorflow::DataType data_type, const tensorflow::TensorShapeProto& shape);
 
 xla::ifrt::Shape ToIfrtShape(const tensorflow::TensorShape& shape);
 

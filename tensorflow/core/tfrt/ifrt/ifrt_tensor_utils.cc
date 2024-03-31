@@ -19,10 +19,12 @@ limitations under the License.
 #include "absl/log/log.h"
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
+#include "tensorflow/compiler/tf2xla/shape_util.h"
 #include "tensorflow/compiler/tf2xla/type_util.h"
 #include "xla/python/ifrt/dtype.h"
 #include "xla/python/ifrt/shape.h"
 #include "xla/python/pjrt_ifrt/pjrt_array.h"
+#include "xla/shape.h"
 #include "xla/xla_data.pb.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/tensor_shape.pb.h"
@@ -52,6 +54,21 @@ absl::StatusOr<xla::ifrt::DType> ToIfrtDType(
   TF_RETURN_IF_ERROR(
       tensorflow::DataTypeToPrimitiveType(tensor_dtype, &primitive_type));
   return xla::ifrt::ToDType(primitive_type);
+}
+
+absl::StatusOr<xla::Shape> TensorShapeToXlaShape(
+    tensorflow::DataType data_type, const tensorflow::TensorShapeProto& shape) {
+  xla::Shape xla_shape;
+  TF_ASSIGN_OR_RETURN(tensorflow::TensorShape tensor_shape,
+                      tensorflow::TensorShape::BuildTensorShape(shape));
+
+  if (absl::Status status = tensorflow::TensorShapeToXLAShape(
+          data_type, tensor_shape, &xla_shape);
+      status.ok()) {
+    return xla_shape;
+  } else {
+    return status;
+  }
 }
 
 xla::ifrt::Shape ToIfrtShape(const tensorflow::TensorShape& shape) {
