@@ -47,6 +47,7 @@ limitations under the License.
 #include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
 #include "xla/comparison_util.h"
+#include "xla/hlo/ir/collective_device_list.h"
 #include "xla/hlo/ir/dfs_hlo_visitor.h"
 #include "xla/hlo/ir/hlo_clone_context.h"
 #include "xla/hlo/ir/hlo_domain_metadata.h"
@@ -857,9 +858,9 @@ class HloInstruction {
   // order of inputs from different participants.
   static std::unique_ptr<HloInstruction> CreateAllGather(
       const Shape& shape, absl::Span<HloInstruction* const> operands,
-      int64_t all_gather_dimension,
-      absl::Span<const ReplicaGroup> replica_groups, bool constrain_layout,
-      const std::optional<int64_t>& channel_id, bool use_global_device_ids);
+      int64_t all_gather_dimension, const CollectiveDeviceList& device_list,
+      bool constrain_layout, const std::optional<int64_t>& channel_id,
+      bool use_global_device_ids);
 
   // Creates an all-gather-start op, which concats the operands of all
   // participants
@@ -870,9 +871,9 @@ class HloInstruction {
   // conjunction of a AllGatherDone op that synchronizes and returns the result.
   static std::unique_ptr<HloInstruction> CreateAllGatherStart(
       const Shape& shape, absl::Span<HloInstruction* const> operands,
-      int64_t all_gather_dimension,
-      absl::Span<const ReplicaGroup> replica_groups, bool constrain_layout,
-      const std::optional<int64_t>& channel_id, bool use_global_device_ids);
+      int64_t all_gather_dimension, const CollectiveDeviceList& device_list,
+      bool constrain_layout, const std::optional<int64_t>& channel_id,
+      bool use_global_device_ids);
 
   // Creates a cross replica reduction op.
   //
@@ -890,7 +891,7 @@ class HloInstruction {
   static std::unique_ptr<HloInstruction> CreateAllReduce(
       const Shape& shape, absl::Span<HloInstruction* const> operands,
       HloComputation* reduce_computation,
-      absl::Span<const ReplicaGroup> replica_groups, bool constrain_layout,
+      const CollectiveDeviceList& device_list, bool constrain_layout,
       const std::optional<int64_t>& channel_id, bool use_global_device_ids);
 
   // Creates a reduce-scatter operation which reduces its inputs across the
@@ -899,7 +900,7 @@ class HloInstruction {
   static std::unique_ptr<HloInstruction> CreateReduceScatter(
       const Shape& shape, absl::Span<HloInstruction* const> operands,
       HloComputation* reduce_computation,
-      absl::Span<const ReplicaGroup> replica_groups, bool constrain_layout,
+      const CollectiveDeviceList& device_list, bool constrain_layout,
       const std::optional<int64_t>& channel_id, bool use_global_device_ids,
       int64_t scatter_dimension);
 
@@ -919,7 +920,7 @@ class HloInstruction {
   static std::unique_ptr<HloInstruction> CreateAllReduceStart(
       const Shape& shape, absl::Span<HloInstruction* const> operands,
       HloComputation* reduce_computation,
-      absl::Span<const ReplicaGroup> replica_groups, bool constrain_layout,
+      const CollectiveDeviceList& device_list, bool constrain_layout,
       const std::optional<int64_t>& channel_id, bool use_global_device_ids);
 
   // An all-to-all op takes N array operands of the same shape and scatters them
@@ -950,7 +951,7 @@ class HloInstruction {
   // performs AllToAll and then concatenates the results into a single array.
   static std::unique_ptr<HloInstruction> CreateAllToAll(
       const Shape& shape, absl::Span<HloInstruction* const> operands,
-      absl::Span<const ReplicaGroup> replica_groups, bool constrain_layout,
+      const CollectiveDeviceList& device_list, bool constrain_layout,
       const std::optional<int64_t>& channel_id,
       const std::optional<int64_t>& split_dimension = std::nullopt);
 
@@ -960,13 +961,13 @@ class HloInstruction {
   // on that replica is a tensor consists of 0(s) in `shape`.
   static std::unique_ptr<HloInstruction> CreateCollectiveBroadcast(
       const Shape& shape, absl::Span<HloInstruction* const> operand,
-      absl::Span<const ReplicaGroup> replica_groups, bool constrain_layout,
+      const CollectiveDeviceList& device_list, bool constrain_layout,
       const std::optional<int64_t>& channel_id);
 
   static std::unique_ptr<HloInstruction> CreateCollectiveBroadcast(
       const Shape& shape, HloInstruction* input, HloInstruction* output,
       HloInstruction* input_start_indices, HloInstruction* output_start_indices,
-      absl::Span<const ReplicaGroup> replica_groups, bool constrain_layout,
+      const CollectiveDeviceList& device_list, bool constrain_layout,
       const std::optional<int64_t>& channel_id);
 
   // Creates a communication instruction that permutes data cross replicas.
@@ -2345,7 +2346,12 @@ class HloInstruction {
   Shape* mutable_outfeed_shape();
 
   // Delegates to HloCollectiveInstruction::replica_groups.
+  // TODO(b/316622399): Remove usages of this method and replace with
+  // device_list()->replica_groups().
   const std::vector<ReplicaGroup>& replica_groups() const;
+
+  // Delegates to HloCollectiveInstruction::device_list.
+  const CollectiveDeviceList& device_list() const;
 
   // Delegates to HloCollectivePermuteInstruction::source_target_pairs.
   const std::vector<std::pair<int64_t, int64_t>>& source_target_pairs() const;
