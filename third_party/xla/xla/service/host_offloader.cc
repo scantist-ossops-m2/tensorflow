@@ -163,6 +163,25 @@ HloInstruction* FindDSAnnotation(HloInstruction* hlo) {
   return hlo;
 }
 
+// Starting from a MoveToDevice custom call, trace the graph up reshapes,
+// bitcasts and reduces to return the dynamic-slice that produces the data that
+// is being moved to the device. In the case where the data does not trace
+// through a reshape or bitcast, returns the original MoveToDevice custom call.
+HloInstruction* FindDSFromAnnotation(HloInstruction* custom_call) {
+  CHECK(custom_call->IsCustomCall(
+      host_memory_offload_annotations::kMoveToDeviceCustomCallTarget))
+      << "Expected a MoveToDevice custom call as input.";
+  HloInstruction* hlo = custom_call->mutable_operand(0);
+  while (hlo->opcode() != HloOpcode::kDynamicSlice) {
+    if (hlo->opcode() != HloOpcode::kReshape &&
+        hlo->opcode() != HloOpcode::kBitcast &&
+        hlo->opcode() != HloOpcode::kReduce) {
+      break;
+    }
+    hlo = hlo->mutable_operand(0);
+  }
+  return hlo->opcode() == HloOpcode::kDynamicSlice ? hlo : custom_call;
+}
 }  // namespace
 
 absl::StatusOr<bool> HostOffloader::TryOutputStreaming(
@@ -541,7 +560,12 @@ Status HostOffloader::MemoryOnlyOffloadInsertCopies(
 
 absl::StatusOr<bool> HostOffloader::TryParameterStreaming(
     HloInstruction* custom_call) {
-  HloInstruction* operand_of_load_annotation = custom_call->mutable_operand(0);
+  // Check if this custom call traces up to a dynamic slice. If so, we must use
+  // HloAliasAnalysis on the input buffer to that dynamic slice.
+  HloInstruction* custom_call_or_ds = FindDSFromAnnotation(custom_call);
+  HloInstruction* operand_of_load_annotation =
+      custom_call_or_ds->mutable_operand(0);
+
   const HloBuffer& unique_buffer =
       alias_analysis_->GetUniqueBufferAt(operand_of_load_annotation);
   bool is_defined_by_entry_param_with_host_memory_space = false;
@@ -655,6 +679,7 @@ absl::StatusOr<bool> HostOffloader::Run(
     const absl::flat_hash_set<absl::string_view>& execution_threads) {
   bool changed = false;
 
+  VLOG(1) << "Running host offloader" << module->ToString();
   call_graph_ = CallGraph::Build(module);
 
   // Run HloAliasAnalysis on module.
@@ -802,6 +827,8 @@ absl::StatusOr<bool> HostOffloader::Run(
     TF_RETURN_IF_ERROR(custom_call->parent()->RemoveInstruction(custom_call));
     changed = true;
   }
+
+  VLOG(1) << "Module after host offloader: " << module->ToString();
 
   return changed;
 }

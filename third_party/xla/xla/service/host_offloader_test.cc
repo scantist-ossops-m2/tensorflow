@@ -224,6 +224,70 @@ ENTRY main {
   VLOG(1) << "module after: " << module->ToString();
 }
 
+TEST_F(HostOffloaderTest, ParameterStreamingScanLoop) {
+  const std::string& hlo_string = R"(
+HloModule m,
+  entry_computation_layout={(f32[8,2]{0,1:T(2,128)S(5)})->(f32[]{:T(256)}, f32[8,2]{0,1:T(2,128)})},
+  allow_spmd_sharding_propagation_to_output={true,true}
+
+add {
+  lhs = f32[] parameter(0)
+  rhs = f32[] parameter(1)
+  ROOT add = f32[] add(lhs, rhs)
+}
+
+while_body {
+  arg_tuple.8 = (s32[]{:T(256)}, f32[8,2]{0,1:T(2,128)}, f32[8,2]{0,1:T(2,128)}) parameter(0)
+  get-tuple-element.9 = s32[]{:T(256)} get-tuple-element(arg_tuple.8), index=0
+  constant.12 = s32[]{:T(256)} constant(1)
+  add.29 = s32[]{:T(256)} add(get-tuple-element.9, constant.12)
+  get-tuple-element.10 = f32[8,2]{0,1:T(2,128)} get-tuple-element(arg_tuple.8), index=1
+  get-tuple-element.11 = f32[8,2]{0,1:T(2,128)} get-tuple-element(arg_tuple.8), index=2
+  constant.16 = s32[]{:T(256)} constant(0)
+  dynamic-slice.20 = f32[1,2]{0,1:T(2,128)} dynamic-slice(get-tuple-element.11, get-tuple-element.9,  constant.16), dynamic_slice_sizes={1,2}
+  constant.1 = f32[] constant(-0)
+  reduce = f32[2]{0:T(256)} reduce(dynamic-slice.20, constant.1), dimensions={0}, to_apply=add
+  custom-call = f32[2]{0:T(256)} custom-call(reduce), custom_call_target="MoveToDevice"
+  constant.13 = f32[]{:T(256)} constant(1)
+  broadcast.14 = f32[2]{0:T(256)} broadcast(constant.13), dimensions={}
+  add.23 = f32[2]{0:T(256)} add(custom-call, broadcast.14)
+  reshape.24 = f32[1,2]{0,1:T(2,128)} reshape(add.23)
+  dynamic-update-slice.28 = f32[8,2]{0,1:T(2,128)} dynamic-update-slice(get-tuple-element.10, reshape.24, get-tuple-element.9, constant.16)
+  ROOT tuple.30 = (s32[]{:T(256)}, f32[8,2]{0,1:T(2,128)}, f32[8,2]{0,1:T(2,128)}) tuple(add.29, dynamic-update-slice.28,  get-tuple-element.11)
+}
+
+condition {
+  arg_tuple.32 = (s32[]{:T(256)}, f32[8,2]{0,1:T(2,128)}, f32[8,2]{0,1:T(2,128)}) parameter(0)
+  get-tuple-element.33 = s32[]{:T(256)} get-tuple-element(arg_tuple.32), index=0
+  constant.36 = s32[]{:T(256)} constant(8)
+  ROOT compare.37 = pred[]{:T(1024)} compare(get-tuple-element.33, constant.36), direction=LT
+}
+
+ENTRY e {
+  constant.3 = f32[]{:T(256)} constant(1)
+  constant.2 = s32[]{:T(256)} constant(0)
+  constant.4 = f32[]{:T(256)} constant(0)
+  broadcast.5 = f32[8,2]{0,1:T(2,128)} broadcast(constant.4), dimensions={}
+  Arg_0.1 = f32[8,2]{0,1:T(2,128)} parameter(0), sharding={replicated}
+  tuple.6 = (s32[]{:T(256)}, f32[8,2]{0,1:T(2,128)}, f32[8,2]{0,1:T(2,128)}) tuple(constant.2, broadcast.5, Arg_0.1)
+  while.38 = (s32[]{:T(256)}, f32[8,2]{0,1:T(2,128)}, f32[8,2]{0,1:T(2,128)}) while(tuple.6), condition=condition, body=while_body
+  get-tuple-element.40 = f32[8,2]{0,1:T(2,128)} get-tuple-element(while.38), index=1
+  ROOT tuple.42 = (f32[]{:T(256)}, f32[8,2]{0,1:T(2,128)}) tuple(constant.3, get-tuple-element.40)
+}
+)";
+
+  TF_ASSERT_OK_AND_ASSIGN(auto module,
+                          ParseAndReturnVerifiedModule(hlo_string));
+  TF_ASSERT_OK_AND_ASSIGN(
+      bool changed, RunHostOffloader(module.get(), /*after_layout=*/true));
+  EXPECT_TRUE(changed);
+  EXPECT_FALSE(HaveRemainingOffloadAnnotations(module.get()));
+  HloVerifier verifier(/*layout_sensitive=*/true,
+                       /*allow_mixed_precision=*/true);
+  TF_EXPECT_OK(verifier.Run(module.get()).status());
+  VLOG(1) << "module after: " << module->ToString();
+}
+
 TEST_F(HostOffloaderTest, BasicNoCopy) {
   const std::string& hlo_string = R"(
 HloModule my_module
