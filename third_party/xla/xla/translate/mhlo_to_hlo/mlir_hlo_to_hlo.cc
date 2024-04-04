@@ -3175,9 +3175,10 @@ LogicalResult ConvertToHloModule::Lower(
         return failure();
 
       if (has_ret_shardings) {
-        auto tuple = Tuple(builder, {operand});
         builder->SetSharding(*ret_shardings[0]);
-        *return_value = GetTupleElement(tuple, 0);
+        // The operand's sharding and *ret_shardings[0] may be different. If so,
+        // the added copy is a reshard.
+        *return_value = Copy(operand);
         builder->ClearSharding();
       } else {
         *return_value = operand;
