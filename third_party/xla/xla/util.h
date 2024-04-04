@@ -212,21 +212,6 @@ void StridedCopy(D* dest, int64_t dest_stride, const S* src, int64_t src_stride,
 Status AddStatus(Status prior, absl::string_view context);
 Status AppendStatus(Status prior, absl::string_view context);
 
-// This macro defines the arguments to be used as an error
-// message to be passed to absl::StrFormat, and returns a status in the
-// canonical error space.
-#define DEFINE_XLA_ERROR_WITH_STRFORMAT_WITH_BACKTRACE(error_type)  \
-  template <typename... Args>                                       \
-  Status error_type(const absl::FormatSpec<Args...>& format,        \
-                    const Args&... args) {                          \
-    return WithLogBacktrace(                                        \
-        absl::error_type##Error(absl::StrFormat(format, args...))); \
-  }
-
-DEFINE_XLA_ERROR_WITH_STRFORMAT_WITH_BACKTRACE(InvalidArgument);
-DEFINE_XLA_ERROR_WITH_STRFORMAT_WITH_BACKTRACE(Unimplemented);
-
-#undef DEFINE_XLA_ERROR_WITH_STRFORMAT_WITH_BACKTRACE
 // The following three macros define a common set of code for creating
 // absl::Status errors with the given error_type, with the addition of adding
 // absl::SourceLocation if it's available (PLATFORM_GOOGLE).  They're a
@@ -294,9 +279,11 @@ DEFINE_XLA_ERROR_WITH_STRFORMAT_WITH_BACKTRACE(Unimplemented);
 XLA_ERROR_WITH_STRFORMAT_AND_BACKTRACE(Cancelled);
 XLA_ERROR_WITH_STRFORMAT_AND_BACKTRACE(FailedPrecondition);
 XLA_ERROR_WITH_STRFORMAT_AND_BACKTRACE(Internal);
+XLA_ERROR_WITH_STRFORMAT_AND_BACKTRACE(InvalidArgument);
 XLA_ERROR_WITH_STRFORMAT_AND_BACKTRACE(NotFound);
 XLA_ERROR_WITH_STRFORMAT_AND_BACKTRACE(ResourceExhausted);
 XLA_ERROR_WITH_STRFORMAT_AND_BACKTRACE(Unavailable);
+XLA_ERROR_WITH_STRFORMAT_AND_BACKTRACE(Unimplemented);
 XLA_ERROR_WITH_STRFORMAT_AND_BACKTRACE(Unknown);
 
 #undef XLA_ERROR_WITH_STRFORMAT_AND_BACKTRACE
