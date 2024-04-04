@@ -2112,6 +2112,8 @@ void SetHloSharding(const HloInstructionSequence& sequence,
 
   for (HloInstruction* inst : instructions) {
     if (inst->opcode() == HloOpcode::kOutfeed ||
+        inst->opcode() == HloOpcode::kRecv ||
+        inst->opcode() == HloOpcode::kRecvDone ||
         inst->opcode() == HloOpcode::kSend ||
         inst->opcode() == HloOpcode::kSendDone) {
       continue;
@@ -2271,7 +2273,8 @@ Status SetHloShardingPostProcessing(
       // have. Here we restore these maximal shardings if present.
       auto preserved_sharding_iter = preserve_shardings.find(inst->name());
       if (preserved_sharding_iter != preserve_shardings.end()) {
-        const auto& preserved_sharding = preserved_sharding_iter->second;
+        const std::vector<HloSharding>& preserved_sharding =
+            preserved_sharding_iter->second;
         if (preserved_sharding.size() > 1) {
           std::vector<Shape> tuple_elements_shape(
               inst->operand(0)->shape().tuple_shapes().begin(),
@@ -2282,37 +2285,46 @@ Status SetHloShardingPostProcessing(
           ShapeTree<HloSharding> output_tuple_sharding(
               output_tuple_sharding_shape, Undefined());
           size_t i = 0;
-          for (auto& leaf : output_tuple_sharding.leaves()) {
+          for (std::pair<ShapeIndex, HloSharding>& leaf :
+               output_tuple_sharding.leaves()) {
             leaf.second = preserved_sharding.at(i++);
           }
           inst->set_sharding(HloSharding::Tuple(output_tuple_sharding));
         } else {
-          inst->set_sharding(preserved_sharding.at(0));
+          CHECK_EQ(preserved_sharding.size(), 1);  // Crash OK
+          inst->set_sharding(preserved_sharding[0]);
         }
       }
       continue;
-    } else if (inst->opcode() == HloOpcode::kSend) {
+    } else if (inst->opcode() == HloOpcode::kSend ||
+               inst->opcode() == HloOpcode::kRecv ||
+               inst->opcode() == HloOpcode::kRecvDone) {
       // In the analysis itself, we use replicated strategies as a stand-in for
       // the (expected) maximal sharding annotations that send ops usually
       // have. Here we restore these maximal shardings if present.
       auto preserved_sharding_iter = preserve_shardings.find(inst->name());
       if (preserved_sharding_iter != preserve_shardings.end()) {
-        const auto& preserved_sharding = preserved_sharding_iter->second;
+        const std::vector<HloSharding>& preserved_sharding =
+            preserved_sharding_iter->second;
         if (preserved_sharding.size() > 1) {
           inst->set_sharding(
               HloSharding::Tuple(inst->shape(), preserved_sharding));
         } else {
-          CHECK_EQ(preserved_sharding.size(), 1);
+          if (preserved_sharding.size() != 1) {
+            return absl::InternalError(absl::StrCat(
+                "An empty sharding was preserved for ", inst->name(),
+                ". This should be reported as a bug."));
+          }
           inst->set_sharding(preserved_sharding[0]);
         }
       }
       continue;
     } else {
       if (inst->shape().IsTuple()) {
-        // While we do not support nested tuples fully, this is a hack to get
-        // things to work in some cases (specifically observed for the llama and
-        // gemma models) where nested tuples as used as inputs/outputs of the
-        // kOptimizationBarrier instruction.
+        // While we do not support nested tuples fully (b/332951306), this is a
+        // hack to get things to work in some cases (specifically observed for
+        // the llama and gemma models) where nested tuples as used as
+        // inputs/outputs of the kOptimizationBarrier instruction.
         if (absl::c_any_of(
                 inst->shape().tuple_shapes(),
                 [](const Shape& shape) { return shape.IsTuple(); })) {
@@ -2355,7 +2367,7 @@ Status SetHloShardingPostProcessing(
             for (size_t i = 0; i < inst->shape().tuple_shapes_size(); ++i) {
               CHECK(!inst->shape().tuple_shapes(i).IsTuple())
                   << "We currently do not support ops with nested tuples as "
-                     "output.";
+                     "output. See b/332951306.";
               const ShardingStrategy& stra =
                   GetShardingStrategyForTuple(inst, {static_cast<int64_t>(i)},
                                               strategy_map, cost_graph, s_val);
@@ -2842,7 +2854,7 @@ void FindReplicateSet(
 }
 
 // Substitute all-reduce strategies with their reduce-scatter variants.
-void GenerateReduceScatter(
+absl::Status GenerateReduceScatter(
     const HloInstructionSequence& sequence, const AliasMap& alias_map,
     const InstructionDepthMap& depth_map, const StrategyMap& strategy_map,
     const CostGraph& cost_graph, absl::Span<const NodeStrategyIdx> s_val,
@@ -3107,8 +3119,9 @@ void GenerateReduceScatter(
     replace_with->set_sharding(
         GetShardingStrategy(inst, strategy_map, cost_graph, s_val)
             .output_sharding);
-    TF_CHECK_OK(inst->ReplaceAllUsesWith(replace_with));
+    TF_RETURN_IF_ERROR(inst->ReplaceAllUsesWith(replace_with));
   }
+  return OkStatus();
 }
 
 void AnnotateShardingWithSimpleHeuristic(
@@ -3449,6 +3462,8 @@ AutoShardingImplementation::SaveAndRemoveShardingAnnotation(
        module->computations(execution_threads)) {
     for (const auto inst : computation->instructions()) {
       if (inst->opcode() == HloOpcode::kOutfeed ||
+          inst->opcode() == HloOpcode::kRecv ||
+          inst->opcode() == HloOpcode::kRecvDone ||
           inst->opcode() == HloOpcode::kSend ||
           inst->opcode() == HloOpcode::kSendDone) {
         spmd::SaveShardingForInstruction(inst,
@@ -3837,8 +3852,9 @@ absl::StatusOr<AutoShardingResult> AutoShardingImplementation::RunAutoSharding(
 
     // ----- Substitute all-reduce with reduce-scatter -----
     if (option_.prefer_reduce_scatter) {
-      GenerateReduceScatter(sequence, alias_map, ins_depth_map, strategy_map,
-                            cost_graph, s_val, cluster_env, option_);
+      TF_RETURN_IF_ERROR(GenerateReduceScatter(
+          sequence, alias_map, ins_depth_map, strategy_map, cost_graph, s_val,
+          cluster_env, option_));
     }
     // ----- Set Sharding -----
     SetHloSharding(sequence, strategy_map, cost_graph, s_val,
@@ -3918,6 +3934,21 @@ bool ShardedOnTooManyMeshAxes(const HloModule& module) {
   return false;
 }
 
+bool HasUnsupportedNestedTuples(const HloModule& module) {
+  for (const auto* computation : module.computations()) {
+    for (const auto* instruction : computation->instructions()) {
+      if (instruction->opcode() == HloOpcode::kConditional) {
+        for (const HloInstruction* operand : instruction->operands()) {
+          if (ShapeUtil::IsNestedTuple(operand->shape())) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
 std::unique_ptr<HloModule> CloneModule(const HloModule* module) {
   auto module_clone = module->Clone("");
   module_clone->set_layout_canonicalization_callback(
@@ -3938,15 +3969,25 @@ absl::StatusOr<bool> AutoSharding::Run(
 
   if (IsModuleManuallySharded(module)) {
     LOG(FATAL)
-        << "Auto-sharding on partially manually sharded modules is not yet "
-           "supported. Please fall back on the sharding propagation pass.";
+        << "Auto-sharding on partially manually sharded modules "  // Crash OK
+           "is not yet supported. Please fall back on the sharding "
+           "propagation pass.";
     return false;
   }
 
   if (ShardedOnTooManyMeshAxes(*module)) {
-    LOG(FATAL) << "The input module contains sharding annotations over a mesh "
-                  "with too many axes (>2). This case is currently not well "
-                  "supported.";
+    LOG(FATAL) << "The input module contains sharding annotations "  // Crash OK
+                  "over a mesh with too many axes (>2). This case is currently "
+                  "not well supported.";
+    return false;
+  }
+
+  // TODO(b/332951306): Remove this check once nested tuples are supported
+  // everywhere
+  if (HasUnsupportedNestedTuples(*module)) {
+    LOG(FATAL) << "The input module contains nested tuples "  // Crash OK
+                  "which we do not currently support well. See b/332951306 to "
+                  "track progress on this.";
     return false;
   }
 
