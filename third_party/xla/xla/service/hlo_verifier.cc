@@ -1443,6 +1443,32 @@ Status ShapeVerifier::HandleWhile(HloInstruction* xla_while) {
         "shape: %s",
         StringifyShape(conditional_shape));
   }
+  HloInstruction* body_ptr = xla_while->while_body()->WhileCallInstruction();
+  if (body_ptr == nullptr) {
+    return Internal(
+        "While body corresponding call instruction is nullptr for while: %s",
+        xla_while->name());
+  }
+  if (body_ptr != xla_while) {
+    return Internal(
+        "While body corresponding call instruction is not equivalent to "
+        "calling while for while: %s",
+        xla_while->name());
+  }
+  HloInstruction* cond_ptr =
+      xla_while->while_condition()->WhileCallInstruction();
+  if (cond_ptr == nullptr) {
+    return Internal(
+        "While condition corresponding call instruction is nullptr for while: "
+        "%s",
+        xla_while->name());
+  }
+  if (cond_ptr != xla_while) {
+    return Internal(
+        "While condition corresponding call instruction is not equivalent to "
+        "calling while for while: %s",
+        xla_while->name());
+  }
   // The shape of kWhile should match the shape of the body computation it
   // calls.
   return CheckShape(xla_while,

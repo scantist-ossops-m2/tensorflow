@@ -509,6 +509,21 @@ absl::StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
                             absl::MakeSpan(cond_operands).subspan(1));
       break;
     }
+    case HloOpcode::kWhile: {
+      TF_RET_CHECK(proto.called_computation_ids_size() == 2)
+          << "While should have 2 called computation but has "
+          << proto.called_computation_ids_size();
+      auto body_computation =
+          computation_map.at(proto.called_computation_ids()[0]);
+      auto cond_computation =
+          computation_map.at(proto.called_computation_ids()[1]);
+      TF_RET_CHECK(proto.operand_ids_size() == 1)
+          << "While should have 1 operand but has " << proto.operand_ids_size();
+      auto while_init = all_operands()[0];
+      instruction =
+          CreateWhile(shape, cond_computation, body_computation, while_init);
+      break;
+    }
     case HloOpcode::kReduce:
       TF_RET_CHECK(proto.operand_ids_size() % 2 == 0)
           << "Reduce instruction should have an even number of operands but "
@@ -1180,12 +1195,6 @@ absl::StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
     }
     default: {
       instruction = absl::WrapUnique(new HloInstruction(opcode, shape));
-      if (instruction->opcode() == HloOpcode::kWhile) {
-        TF_RET_CHECK(proto.called_computation_ids_size() == 2)
-            << "While should have 2 called computation but has "
-            << proto.called_computation_ids_size();
-      }
-
       for (const int64_t operand_id : proto.operand_ids()) {
         instruction->AppendOperand(instruction_map.at(operand_id));
       }
@@ -1726,6 +1735,8 @@ HloInstruction::CreateAddDependency(HloInstruction* data_operand,
   instruction->AppendComputation(condition);
   // Set back pointer from body computation to the while call instruction.
   body->SetWhileCallInstruction(instruction.get());
+  // Set back pointer from condition computation to the while call instruction.
+  condition->SetWhileCallInstruction(instruction.get());
   return instruction;
 }
 
@@ -3223,11 +3234,13 @@ HloComputation* HloInstruction::while_body() const {
 
 void HloInstruction::set_while_condition(HloComputation* computation) {
   CHECK_EQ(HloOpcode::kWhile, opcode_);
+  computation->SetWhileCallInstruction(this);
   rare_->called_computations[kConditionComputationIndex] = computation;
 }
 
 void HloInstruction::set_while_body(HloComputation* computation) {
   CHECK_EQ(HloOpcode::kWhile, opcode_);
+  computation->SetWhileCallInstruction(this);
   rare_->called_computations[kBodyComputationIndex] = computation;
 }
 
@@ -3268,6 +3281,7 @@ HloComputation* HloInstruction::branch_computation(int b) const {
 void HloInstruction::set_branch_computation(int b,
                                             HloComputation* computation) {
   CHECK_EQ(HloOpcode::kConditional, opcode_);
+  computation->SetConditionalCallInstruction(this);
   rare_->called_computations[b] = computation;
 }
 

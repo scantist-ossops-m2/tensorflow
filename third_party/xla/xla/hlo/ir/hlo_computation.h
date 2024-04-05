@@ -763,7 +763,9 @@ class HloComputation {
 
   // Returns if this computation is a body computation of a while.
   bool IsWhileBodyComputation() const {
-    return instruction_type() == InstructionType::kWhile;
+    return instruction_type() == InstructionType::kWhile &&
+           instruction()->called_computations().size() == 2 &&
+           instruction()->called_computations()[0] == this;
   }
 
   // Returns the owning while call instruction, or nullptr if this is not a
