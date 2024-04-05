@@ -65,8 +65,6 @@ PoolParameters::PoolParameters(OpKernelContext* context,
         context, GetWindowedOutputSize(tensor_in_cols, window_cols, col_stride,
                                        padding, &out_width, &pad_cols));
   } else {
-    OP_REQUIRES(context, depth_window > 0,
-                errors::InvalidArgument("depth_window must not be 0"));
     // Our current version of depthwise max pooling does not support
     // any padding, and expects the depth_window to equal the
     // depth_stride (no overlapping).
