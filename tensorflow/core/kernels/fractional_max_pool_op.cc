@@ -44,9 +44,15 @@ class FractionalMaxPoolOp : public OpKernel {
     OP_REQUIRES(context, pooling_ratio_.size() == 4,
                 errors::InvalidArgument("pooling_ratio field must "
                                         "specify 4 dimensions"));
+    for (std::size_t i = 0; i < pooling_ratio_.size(); ++i) {
+      OP_REQUIRES(context, pooling_ratio_[i] >= 1,
+                  errors::InvalidArgument(
+                      "pooling_ratio cannot be smaller than 1, got: ",
+                      pooling_ratio_[i]));
+    }
 
     OP_REQUIRES(
-        context, pooling_ratio_[0] == 1 || pooling_ratio_[3] == 1,
+        context, pooling_ratio_[0] == 1 && pooling_ratio_[3] == 1,
         errors::Unimplemented("Fractional max pooling is not yet "
                               "supported on the batch nor channel dimension."));
 
