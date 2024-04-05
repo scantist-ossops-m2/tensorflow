@@ -23,6 +23,7 @@ from tensorflow.python.framework import ops
 from tensorflow.python.framework import sparse_tensor
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import gen_sparse_ops
 from tensorflow.python.ops import gradient_checker
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.ops import sparse_ops
@@ -513,6 +514,13 @@ class SparseFillEmptyRowsTest(test_util.TensorFlowTestCase):
         self.assertAllEqual(output.dense_shape, [5, 6])
         self.assertAllEqual(empty_row_indicator_out,
                             np.array([0, 0, 1, 0, 1]).astype(np.bool_))
+
+  def testSparseFillEmptyRowsGradEmpty(self):
+    with test_util.use_gpu():
+      grad, _ = self.evaluate(
+          sparse_ops.sparse_fill_empty_rows_grad(
+              reverse_index_map=[], grad_values=[]))
+      self.assertAllEqual(grad, [])
 
   @test_util.run_deprecated_v1
   def testFillFloat(self):
@@ -1088,6 +1096,18 @@ class SparseMinimumMaximumTest(test_util.TensorFlowTestCase):
       min_tf = sparse_ops.sparse_minimum(sp_zero, sp_zero_2)
       self._assertSparseTensorValueEqual(expected, max_tf)
       self._assertSparseTensorValueEqual(expected, min_tf)
+
+  def testInvalidSparseInputs(self):
+    with test_util.force_cpu():
+      with self.assertRaisesRegex(
+          (ValueError, errors.InvalidArgumentError),
+          ".*Index rank .* and shape rank .* do not match.*",
+      ):
+        self.evaluate(
+            gen_sparse_ops.sparse_sparse_maximum(
+                [[1]], [0], [2], [[]], [1], [2]
+            )
+        )
 
   @test_util.run_deprecated_v1
   def testRandom(self):
