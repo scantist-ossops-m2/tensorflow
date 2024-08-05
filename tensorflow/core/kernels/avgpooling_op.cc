@@ -298,7 +298,7 @@ class AvgPoolingGradOp : public OpKernel {
     TensorShape output_shape;
     auto shape_vec = tensor_in_shape.vec<int32>();
     for (int64_t i = 0; i < tensor_in_shape.NumElements(); ++i) {
-      output_shape.AddDim(shape_vec(i));
+      OP_REQUIRES_OK(context, output_shape.AddDimWithStatus(shape_vec(i)));
     }
     const int64_t in_rows = output_shape.dim_size(1);
     const int64_t in_cols = output_shape.dim_size(2);
@@ -335,6 +335,19 @@ class AvgPoolingGradOp : public OpKernel {
 
     const T* out_backprop_ptr = out_backprop.flat<T>().data();
     T* input_backprop_ptr = output->flat<T>().data();
+
+    for (int64_t r = 0; r < out_backprop_rows; ++r) {
+      int rindex, rsize;
+      OP_REQUIRES_OK(context,
+                     GetBroadcastSize(r, in_rows, window_rows, row_stride,
+                                      pad_rows, &rindex, &rsize));
+      for (int64_t c = 0; c < out_backprop_cols; ++c) {
+        int cindex, csize;
+        OP_REQUIRES_OK(context,
+                       GetBroadcastSize(c, in_cols, window_cols, col_stride,
+                                        pad_cols, &cindex, &csize));
+      }
+    }
 
     auto shard = [context, out_backprop_ptr, input_backprop_ptr,
                   out_backprop_rows, out_backprop_cols, out_backprop_depth,
@@ -457,7 +470,7 @@ class AvgPoolingGradOp<GPUDevice, T> : public OpKernel {
     TensorShape output_shape;
     auto shape_vec = tensor_in_shape.vec<int32>();
     for (int64_t i = 0; i < tensor_in_shape.NumElements(); ++i) {
-      output_shape.AddDim(shape_vec(i));
+      OP_REQUIRES_OK(context, output_shape.AddDimWithStatus(shape_vec(i)));
     }
 
     if (output_shape.num_elements() == 0) {
@@ -543,7 +556,7 @@ class AvgPoolingGradOpCustomGPUKernel : public OpKernel {
     TensorShape output_shape;
     auto shape_vec = tensor_in_shape.vec<int32>();
     for (int64_t i = 0; i < tensor_in_shape.NumElements(); ++i) {
-      output_shape.AddDim(shape_vec(i));
+      OP_REQUIRES_OK(context, output_shape.AddDimWithStatus(shape_vec(i)));
     }
     if (output_shape.num_elements() == 0) {
       Tensor* output = nullptr;
