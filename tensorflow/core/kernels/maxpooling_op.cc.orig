@@ -230,7 +230,6 @@ class MaxPoolingGradOp : public OpKernel {
 
     OP_REQUIRES_OK(context, context->GetAttr("padding", &padding_));
   }
-  if (tensor_in.NumElements() == 0 || output->NumElements() == 0) return;
 
   void Compute(OpKernelContext* context) override {
     const Tensor& tensor_in = context->input(0);
@@ -1147,10 +1146,6 @@ class MaxPoolingNoMaskV2Op<GPUDevice, T> : public OpKernel {
 
   void Compute(OpKernelContext* context) override {
     const Tensor& tensor_in = context->input(0);
-    OP_REQUIRES(context, tensor_in.dims() == 4,
-                errors::InvalidArgument("tensor_in must be 4-dimensional (2)"));
-    OP_REQUIRES(context, tensor_in.NumElements() > 0,
-                errors::InvalidArgument("tensor_in must not be empty (2)"));
 
     std::vector<int32> ksize = ksize_;
     std::vector<int32> stride = stride_;
