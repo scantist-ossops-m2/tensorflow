@@ -351,6 +351,15 @@ class OperatorShapeTest(test_util.TensorFlowTestCase):
                                 "must be a tensor with a single value"):
       array_ops.expand_dims(1, axis=[0, 1])
 
+  def testReshapeWithManyDims(self):
+    with self.assertRaisesRegex(errors.InvalidArgumentError,
+                                "too many dimensions"):
+      self.evaluate(
+          array_ops.reshape(
+              tensor=[[1]],
+              shape=constant_op.constant([1 for i in range(254)],
+                                         dtype=dtypes.int64)))
+
 
 @test_util.with_eager_op_as_function
 class ReverseV2Test(test_util.TensorFlowTestCase):
@@ -1544,6 +1553,21 @@ class PadTest(test_util.TensorFlowTestCase):
                           [[0, 0, 0, 0, 0, 0, 0], [0, 0, 1, 2, 3, 0, 0],
                            [0, 0, 4, 5, 6, 0, 0], [0, 0, 0, 0, 0, 0, 0]])
 
+  # b/246325518: Bad shape size. Explicitly testing different execution paths.
+  def testInvalidMirrorPadGradEagerMode(self):
+    with context.eager_mode():
+      with self.assertRaises(Exception):
+        gen_array_ops.MirrorPadGrad(
+            input=[1], paddings=[[0x77f00000, 0xa000000]], mode="REFLECT")
+
+  # b/246325518: Bad shape size. Explicitly testing different execution paths.
+  def testInvalidMirrorPadGradGraphMode(self):
+    with context.graph_mode():
+      with self.assertRaises(Exception):
+        result = gen_array_ops.MirrorPadGrad(
+            input=[1], paddings=[[0x77f00000, 0xa000000]], mode="REFLECT")
+        self.evaluate(result)
+
   def testSymmetricMirrorPadGrad(self):
     t = np.broadcast_to(np.arange(0, 7), (3, 2, 1, 7))
     paddings = constant_op.constant([
@@ -1767,6 +1791,72 @@ class QuantizeAndDequantizeTest(test_util.TensorFlowTestCase):
               max_range=input_max,
               axis=2**31 - 1))
 
+  @test_util.run_v2_only
+  def testInvalidAxis(self):
+
+    @def_function.function
+    def test_quantize_and_dequantize_v2():
+      gen_array_ops.quantize_and_dequantize_v2(
+          input=[2.5],
+          input_min=[1.0],
+          input_max=[10.0],
+          signed_input=True,
+          num_bits=1,
+          range_given=True,
+          round_mode="HALF_TO_EVEN",
+          narrow_range=True,
+          axis=0x7fffffff)
+
+    @def_function.function
+    def test_quantize_and_dequantize_v3():
+      gen_array_ops.quantize_and_dequantize_v3(
+          input=[2.5],
+          input_min=[1.0],
+          input_max=[10.0],
+          num_bits=1,
+          signed_input=True,
+          range_given=True,
+          narrow_range=True,
+          axis=0x7fffffff)
+
+    @def_function.function
+    def test_quantize_and_dequantize_v4():
+      gen_array_ops.quantize_and_dequantize_v4(
+          input=[2.5],
+          input_min=[1.0],
+          input_max=[10.0],
+          signed_input=True,
+          num_bits=1,
+          range_given=True,
+          round_mode="HALF_TO_EVEN",
+          narrow_range=True,
+          axis=0x7fffffff)
+
+    @def_function.function
+    def test_quantize_and_dequantize_v4_grad():
+      gen_array_ops.quantize_and_dequantize_v4_grad(
+          gradients=[2.5],
+          input=[2.5],
+          input_min=[1.0],
+          input_max=[10.0],
+          axis=0x7fffffff)
+
+    with self.assertRaisesRegex(
+        ValueError, "Axis cannot be >= kint32max value, got 2147483647"):
+      test_quantize_and_dequantize_v2()
+
+    with self.assertRaisesRegex(
+        ValueError, "Axis cannot be >= kint32max value, got 2147483647"):
+      test_quantize_and_dequantize_v3()
+
+    with self.assertRaisesRegex(
+        ValueError, "Axis cannot be >= kint32max value, got 2147483647"):
+      test_quantize_and_dequantize_v4()
+
+    with self.assertRaisesRegex(
+        ValueError, "Axis cannot be >= kint32max value, got 2147483647"):
+      test_quantize_and_dequantize_v4_grad()
+
 
 @test_util.run_all_in_graph_and_eager_modes
 class SortedSearchTest(test_util.TensorFlowTestCase):
@@ -1986,6 +2076,17 @@ class SortedSearchTest(test_util.TensorFlowTestCase):
                 array_ops.ones([2, 0]),
                 side=side,
                 out_type=dtype), array_ops.zeros([2, 0], dtype))
+
+  def testZeroInputSize(self):
+    dtype = dtypes.int32
+    for side in ("left", "right"):
+      with self.subTest(side=side):
+        self.assertAllEqual(
+            array_ops.searchsorted(
+                array_ops.ones([2, 0]),
+                array_ops.ones([2, 3]),
+                side=side,
+                out_type=dtype), array_ops.zeros([2, 3], dtype))
 
   def testInt64(self):
 
