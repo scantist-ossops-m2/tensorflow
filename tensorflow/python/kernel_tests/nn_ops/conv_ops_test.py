@@ -32,6 +32,7 @@ from tensorflow.python.framework import test_util
 from tensorflow.python.layers import convolutional
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
+from tensorflow.python.ops import gen_nn_ops
 from tensorflow.python.ops import gradient_checker
 from tensorflow.python.ops import gradients_impl
 from tensorflow.python.ops import math_ops
@@ -759,6 +760,15 @@ class Conv2DTest(test.TestCase):
         padding=[[2, 1], [1, 2]],
         dilations=[2, 3])
 
+  @test_util.run_in_graph_and_eager_modes()
+  def testConv2dOnlyPaddingReturnsZeros(self):
+    self._VerifyValues(
+        tensor_in_sizes=[1, 0, 2, 1],
+        filter_in_sizes=[1, 1, 1, 1],
+        strides=[1, 1],
+        padding=[[1, 1], [1, 1]],
+        expected=[0, 0, 0, 0, 0, 0, 0, 0])
+
   def testConv2DExplicitPaddingWithLayoutOptimizer(self):
     # Test with Grappler's layout optimizer, to ensure the layout optimizer
     # handles explicit padding correctly.
@@ -1293,7 +1303,7 @@ class Conv2DTest(test.TestCase):
     x2 = self._CreateNumpyTensor(filter_sizes)
     default_dilations = (dilations[0] == 1 and dilations[1] == 1)
     if default_dilations or use_gpu:
-      with self.cached_session(use_gpu=use_gpu) as sess:
+      with self.cached_session(use_gpu=use_gpu):
         if data_format == "NCHW":
           input_sizes = test_util.NHWCToNCHW(input_sizes)
         t1 = constant_op.constant(x1, shape=input_sizes)
@@ -1339,7 +1349,7 @@ class Conv2DTest(test.TestCase):
     x2 = self._CreateNumpyTensor(filter_sizes)
     default_dilations = (dilations[0] == 1 and dilations[1] == 1)
     if default_dilations or use_gpu:
-      with self.cached_session(use_gpu=use_gpu) as sess:
+      with self.cached_session(use_gpu=use_gpu):
         if data_format == "NCHW":
           input_sizes = test_util.NHWCToNCHW(input_sizes)
         t1 = constant_op.constant(x1, shape=input_sizes)
@@ -2602,6 +2612,27 @@ class Conv2DTest(test.TestCase):
               strides=[1, 1, 1, 1],
               padding=[[0, 0], [-1, 0], [0, 0], [0, 0]]))
 
+  def testConv2DBackpropInputInvalidOutBackpropRaiseError(self):
+    with self.assertRaises((ValueError, errors_impl.InvalidArgumentError)):
+      with self.cached_session():
+        input_sizes = constant_op.constant([65534, 65534],
+                                           shape=[2],
+                                           dtype=dtypes.int32)
+        filters = constant_op.constant(
+            0.159749106, shape=[3, 3, 2, 2], dtype=dtypes.float32)
+        out_backprop = constant_op.constant(0, shape=[], dtype=dtypes.float32)
+        t = gen_nn_ops.conv2d_backprop_input(
+            input_sizes=input_sizes,
+            filter=filters,
+            out_backprop=out_backprop,
+            strides=[1, 1, 1, 1],
+            padding="SAME",
+            use_cudnn_on_gpu=True,
+            explicit_paddings=[],
+            data_format="NHWC",
+            dilations=[1, 1, 1, 1])
+        self.evaluate(t)
+
 
 @test_util.run_all_without_tensor_float_32("Avoid TF32 conv on GPU")
 class DepthwiseConv2DTest(test.TestCase):
@@ -2629,7 +2660,7 @@ class DepthwiseConv2DTest(test.TestCase):
     # numbers from 1.
     x1 = [f * 1.0 for f in range(1, total_size_1 + 1)]
     x2 = [f * 1.0 for f in range(1, total_size_2 + 1)]
-    with self.cached_session() as sess:
+    with self.cached_session():
       t1 = constant_op.constant(x1, shape=tensor_in_sizes)
       t1.set_shape(tensor_in_sizes)
       t2 = constant_op.constant(x2, shape=filter_in_sizes)
@@ -2900,7 +2931,7 @@ class DeepConv2DTest(test.TestCase):
     x1 = np.random.rand(*tensor_in_sizes).astype(np.float32)
     x2 = np.random.rand(*filter_in_sizes).astype(np.float32)
 
-    with self.cached_session(use_gpu=False) as sess:
+    with self.cached_session(use_gpu=False):
       t1 = constant_op.constant(x1, shape=tensor_in_sizes)
       t2 = constant_op.constant(x2, shape=filter_in_sizes)
       strides = [1] + conv_strides + [1]
@@ -3382,6 +3413,33 @@ class FusedConv2DTest(test.TestCase):
     self.assertAllEqual(
         np.rint(expected_output),
         self.evaluate(add).reshape(-1))
+
+  # Fused resize and pad conv.
+  @test_util.run_in_graph_and_eager_modes()
+  def testResizeAndPadLargeResize(self):
+    with self.assertRaisesRegex((ValueError, errors_impl.InvalidArgumentError),
+                                "Encountered overflow"):
+      mode = "REFLECT"
+      strides = [1, 1, 1, 1]
+      padding = "SAME"
+      resize_align_corners = False
+      tensor = constant_op.constant(
+          147, shape=[3, 3, 1, 4], dtype=dtypes.float32)
+      size = constant_op.constant([1879048192, 1879048192], dtype=dtypes.int32)
+      paddings = constant_op.constant([[0, 0], [0, 0], [0, 0], [0, 0]],
+                                      dtype=dtypes.int32)
+      kernel = constant_op.constant(
+          123, shape=[1, 3, 4, 1], dtype=dtypes.float32)
+      self.evaluate(
+          gen_nn_ops.fused_resize_and_pad_conv2d(
+              input=tensor,
+              size=size,
+              paddings=paddings,
+              filter=kernel,
+              mode=mode,
+              strides=strides,
+              padding=padding,
+              resize_align_corners=resize_align_corners))
 
 
 if __name__ == "__main__":
